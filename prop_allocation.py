@@ -6,6 +6,7 @@ import logging
 import logging.config
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+import matplotlib.gridspec as gridspec
 import sys
 from tqdm import trange
 
@@ -30,7 +31,7 @@ class AllocationAlgGreedy:
             num_agents: int,
             rng_seed: int | None = None,
             use_prop_1: bool = False,
-            N: int = 100,
+            N: int = 50,
             ) -> None:
         
         self.num_agents = num_agents
@@ -38,30 +39,40 @@ class AllocationAlgGreedy:
         self.good_values_list = None
         self.rng = np.random.default_rng(seed = rng_seed)
         self.use_prop_1 = use_prop_1
-
-        # Set up solution-space
-        self.N = N
-        self.x = np.linspace(0, 1, self.N)  # array of x-values from 0 to 1
-        self.y = np.linspace(0, 1, self.N)  # array of y-values from 0 to 1
-        # Create a 2D mesh grid, X and Y will each be shape (N, N).
-        self.X, self.Y = np.meshgrid(self.x, self.y)
-        self.Z = np.empty((self.N, self.N), dtype=float)
-
-        # Initialize plots.
-        self.fig, self.ax = plt.subplots(2, 1, figsize=(6,5), layout='constrained')
-        self.colormesh = self.ax[0].pcolormesh(self.X, self.Y, self.Z, cmap='plasma', shading='auto')
-        self.ax[0].set_title('t = 0')
-        self.ax[0].set_xlabel('x')
-        self.ax[0].set_ylabel('y')
-        self.cbar = self.fig.colorbar(self.colormesh, ax=self.ax[0])
-
-        self.marker, = self.ax[0].plot(0, 0, marker='x', color='red', markersize=10, mew=2)
-        self.line, = self.ax[1].plot([0], [0], 'k-x')
-        self.ax[1].set_xlabel('$t$')
-        self.ax[1].set_ylabel('$\\alpha$')
-
         self.alpha_tracker = []
-        self.t_list = []
+
+        
+
+        if self.num_agents == 2:
+            # Set up solution-space
+            self.N = N
+            self.x = np.linspace(0, 1, self.N)  # array of x-values from 0 to 1
+            self.y = np.linspace(0, 1, self.N)  # array of y-values from 0 to 1
+            # Create a 2D mesh grid, X and Y will each be shape (N, N).
+            self.X, self.Y = np.meshgrid(self.x, self.y)
+            self.Z = np.empty((self.N, self.N), dtype=float)
+
+            # Initialize plots.
+            self.fig, self.ax = plt.subplots(2, 1, figsize=(6,5), layout='constrained', gridspec_kw={'height_ratios':[2,1]})
+            self.colormesh = self.ax[0].pcolormesh(self.X, self.Y, self.Z, cmap='plasma', shading='auto')
+            self.ax[0].set_title('t = 0')
+            self.ax[0].set_xlabel('x')
+            self.ax[0].set_ylabel('y')
+            self.cbar = self.fig.colorbar(self.colormesh, ax=self.ax[0])
+
+            self.marker, = self.ax[0].plot(0, 0, marker='x', color='red', markersize=10, mew=2)
+            self.line, = self.ax[1].plot([0], [0], 'k-+')
+
+            self.alpha_txt = self.ax[1].text(1, 0.98, rf'$\alpha_\mathrm{{min}}={self.num_agents}$',
+                                horizontalalignment='right',
+                                verticalalignment='top',
+                                transform=self.ax[1].transAxes)
+            
+            self.ax[1].set_xlabel('$t$')
+            self.ax[1].set_ylabel('$\\alpha$')
+
+           
+            self.t_list = []
 
 
     def allocate_good(
@@ -160,7 +171,7 @@ class AllocationAlgGreedy:
 
     def find_worst_good(self) -> list:
         '''
-        Returns the worst good to add.
+        Returns the worst good to add for 2 agents.
         '''
         # worst_good_index = np.argmin(self.Z)
         # if worst_good_index == 0:
@@ -173,9 +184,6 @@ class AllocationAlgGreedy:
         return [worst_good[0], worst_good[1]]
 
 
-
-
-
     def remove_last_good(self) -> None:
         '''
         Remove last good added to the bundles.
@@ -185,28 +193,45 @@ class AllocationAlgGreedy:
 
 
     def update_solution_space(self) -> None:
+        '''
+        Update all values of alpha for combinations of good values for 2 agents.
+        '''
         for i in range(self.N):
             for j in range(self.N):
                 self.Z[i, j] = self.test_allocation([self.x[i], self.y[j]])
 
 
+    def find_next_good(self, t) -> list:
+        '''
+        Find next good for 2 agents.
+        '''
+        if t % 10 < 3:
+            return [self.rng.uniform(), self.rng.uniform()]
+        else:
+            return self.find_worst_good()
+
+
     def update_fig(self, t: int):
         '''
-        Update figure for animation.
+        Update figure for animation for 2 agents.
         '''
+        if not self.num_agents == 2:
+            logger.error('update_fig only works for 2 agents.')
         self.update_solution_space()
-        worst_good = self.find_worst_good()
-        self.colormesh.set_array(self.Z.ravel())
-        self.colormesh.autoscale()
-        self.marker.set_data([worst_good[0]], [worst_good[1]])
-        self.ax[0].set_title(f"t = {t}")
-        self.allocate_good(worst_good)
+        next_good = self.find_next_good(t)
+        self.allocate_good(next_good)
         self.alpha_tracker.append(self.get_prop1_alpha()[0])
         self.t_list.append(t)
+
+        self.colormesh.set_array(self.Z.ravel())
+        self.colormesh.autoscale()
+        self.marker.set_data([next_good[0]], [next_good[1]])
+        self.ax[0].set_title(f"t = {t}")
         self.line.set_data(self.t_list, self.alpha_tracker)
         self.ax[1].relim()
         self.ax[1].autoscale_view()
-        return (self.colormesh, self.marker, self.line,)
+        self.alpha_txt.set_text(rf'$\alpha_\mathrm{{min}} = {np.round(np.min(self.alpha_tracker), 2)}$')
+        return (self.colormesh, self.marker, self.line, self.alpha_txt)
     
 
     def init_fig(self):
@@ -218,13 +243,6 @@ class AllocationAlgGreedy:
 
 def main():
     alloc = AllocationAlgGreedy(2, rng_seed = 123)
-    rng = np.random.default_rng()
-    # x0 = [0.5, 0.5]
-    # bounds = [(0, 1)] * 2
-
-
-    # alloc.allocate_good([0.5, 0.5])
-    # alloc.allocate_good([0.5, 0.5])
 
     anim = FuncAnimation(
         alloc.fig,
@@ -235,12 +253,11 @@ def main():
         init_func=alloc.init_fig
     )
 
-    anim.save('allocation_2.mp4')
+    anim.save('allocation_mixer.mp4')
 
     logger.info(f'Alpha: {alloc.alpha_tracker}')
     logger.info(f'Bundles: {alloc.bundles}')
     logger.info(f'Good values: {alloc.good_values_list}')
-
 
 
 if __name__ == '__main__': main()
